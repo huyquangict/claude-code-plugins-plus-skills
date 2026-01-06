@@ -7,13 +7,12 @@ version: 1.0.0
 author: Jeremy Longshore <jeremy@intentsolutions.io>
 license: MIT
 ---
-# Load Balancer Configurator
 
-This skill provides automated assistance for load balancer configurator tasks.
+# Configuring Load Balancers
 
 ## Overview
 
-Creates and hardens load balancer configurations (cloud or self-managed) including health checks, TLS termination, routing rules, and session persistence.
+This skill provides automated assistance for the described functionality.
 
 ## Prerequisites
 
@@ -42,109 +41,13 @@ Before using this skill, ensure:
 ```nginx
 # {baseDir}/nginx/load-balancer.conf
 
-
-## Overview
-
-This skill provides automated assistance for the described functionality.
-
-## Examples
-
-Example usage patterns will be demonstrated in context.
-upstream backend_servers {
-    least_conn;
-    server 10.0.1.10:8080 weight=3;
-    server 10.0.1.11:8080 weight=2;
-    server 10.0.1.12:8080 backup;
-}
-
-server {
-    listen 80;
-    server_name app.example.com;
-
-    location / {
-        proxy_pass http://backend_servers;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-        proxy_connect_timeout 5s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    location /health {
-        access_log off;
-        return 200 "healthy\n";
-    }
-}
-```
-
-**AWS ALB (Terraform):**
-```hcl
-# {baseDir}/terraform/alb.tf
-resource "aws_lb" "app_alb" {
-  name               = "app-load-balancer"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  subnets            = aws_subnet.public[*].id
-}
-
-resource "aws_lb_target_group" "app_tg" {
-  name     = "app-target-group"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path                = "/health"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-  }
-}
-
-resource "aws_lb_listener" "app_listener" {
-  load_balancer_arn = aws_lb.app_alb.arn
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = aws_acm_certificate.cert.arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app_tg.arn
-  }
-}
-```
-
 ## Error Handling
 
-**Backend Server Unreachable**
-- Error: "502 Bad Gateway" or connection refused
-- Solution: Verify backend server IPs, ports, and firewall rules
-
-**SSL Certificate Error**
-- Error: "certificate verify failed"
-- Solution: Check certificate validity, chain, and private key match
-
-**Health Check Failures**
-- Error: "Target is unhealthy"
-- Solution: Verify health check path returns 200 status and backends are running
-
-**Configuration Syntax Error**
-- Error: "nginx: configuration file test failed"
-- Solution: Run `nginx -t` to validate syntax and fix errors
-
-**Session Persistence Not Working**
-- Issue: Users losing session on subsequent requests
-- Solution: Enable sticky sessions using cookie-based or IP-based persistence
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
 ## Examples
 
-- "Configure an AWS ALB with HTTPS + path-based routing to two target groups."
-- "Generate an Nginx upstream + server block with health checks and sticky sessions."
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 

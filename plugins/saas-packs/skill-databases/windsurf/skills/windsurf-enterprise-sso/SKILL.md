@@ -10,9 +10,7 @@ license: MIT
 author: "Jeremy Longshore <jeremy@intentsolutions.io>"
 ---
 
-# Windsurf Enterprise SSO
-
-Configure enterprise SSO integration for secure team authentication.
+# Windsurf Enterprise Sso
 
 ## Overview
 
@@ -27,98 +25,16 @@ This skill enables enterprise Single Sign-On (SSO) integration for Windsurf depl
 - Compliance requirements documented
 - Certificate management capabilities
 
-## Directory Structure
-
-```
-organization-config/
-    .windsurf-enterprise/
-        sso/
-            config.json                  # SSO configuration
-                # Identity provider settings
-                # SAML/OIDC configuration
-                # Attribute mappings
-
-            providers/
-                okta.json                # Okta configuration
-                    # Application ID
-                    # Domain settings
-                    # Group mappings
-
-                azure-ad.json            # Azure AD configuration
-                    # Tenant ID
-                    # Client configuration
-                    # Role assignments
-
-                google-workspace.json    # Google Workspace config
-                    # Domain verification
-                    # User provisioning
-                    # Group sync settings
-
-            certificates/
-                README.md                # Certificate management guide
-                    # Certificate requirements
-                    # Rotation procedures
-                    # Backup protocols
-
-        policies/
-            access-policy.json           # Access control rules
-                # Role definitions
-                # Permission sets
-                # Group mappings
-
-            session-policy.json          # Session management
-                # Timeout settings
-                # Concurrent session limits
-                # Re-authentication triggers
-
-        audit/
-            auth-logs/
-                README.md                # Audit log documentation
-                    # Log format
-                    # Retention policy
-                    # Export procedures
-```
-
-## SSO Features
-
-### Supported Providers
-- SAML 2.0 identity providers
-- OIDC/OAuth 2.0 providers
-- Okta, Azure AD, Google Workspace
-- Custom enterprise IdPs
-
-### Security Features
-- Multi-factor authentication support
-- Session management
-- Audit logging
-- Just-in-time provisioning
-
 ## Instructions
 
 1. **Prepare Identity Provider**
-   - Create application registration in IdP
-   - Configure redirect URIs
-   - Set up attribute mappings (email, name, groups)
-
 2. **Configure Windsurf SSO**
-   - Enter IdP metadata or configuration
-   - Map user attributes to Windsurf fields
-   - Configure group sync for access control
-
 3. **Set Up Certificates**
-   - Generate or import signing certificates
-   - Configure certificate rotation schedule
-   - Set up backup certificates
-
 4. **Configure Policies**
-   - Define session timeout policies
-   - Set MFA requirements
-   - Configure access control rules
-
 5. **Test and Enable**
-   - Test with pilot user group
-   - Verify MFA flow works correctly
-   - Enable for entire organization
+
+
+See `{baseDir}/references/implementation.md` for detailed implementation guide.
 
 ## Output
 
@@ -129,37 +45,14 @@ organization-config/
 
 ## Error Handling
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| SAML assertion failed | Certificate mismatch | Update certificates, verify metadata |
-| User not provisioned | Missing attribute | Check attribute mapping configuration |
-| MFA not triggering | Policy misconfiguration | Review MFA policy settings |
-| Session timeout issues | Policy conflict | Align IdP and Windsurf session settings |
-| Group sync failed | Permission issue | Verify IdP permissions for group access |
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
 ## Examples
 
-**Example: Configure Okta SSO**
-Request: "Set up SSO with Okta for our organization"
-Result: SAML 2.0 integration with Okta, group sync, and MFA enabled
-
-**Example: Azure AD Integration**
-Request: "Integrate Windsurf with Azure AD for authentication"
-Result: OIDC configuration with Azure AD, role-based access control
-
-**Example: Enable MFA Requirement**
-Request: "Require MFA for all Windsurf users"
-Result: Policy configured to enforce MFA at every authentication
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 
 - [Windsurf SSO Guide](https://docs.windsurf.ai/admin/sso)
 - [SAML 2.0 Configuration](https://docs.windsurf.ai/admin/saml)
 - [OIDC Configuration](https://docs.windsurf.ai/admin/oidc)
-
-## Success Criteria
-
-- SSO authentication functional
-- MFA enabled and working
-- Audit logging active
-- Compliance requirements met

@@ -10,9 +10,7 @@ license: MIT
 author: "Jeremy Longshore <jeremy@intentsolutions.io>"
 ---
 
-# Windsurf CI/CD GitHub Actions
-
-Generate and maintain GitHub Actions workflows with Cascade AI assistance.
+# Windsurf Cicd Github Actions
 
 ## Overview
 
@@ -26,98 +24,16 @@ This skill enables AI-assisted CI/CD workflow creation within Windsurf. Cascade 
 - GitHub Actions enabled on repository
 - Deployment targets configured (if applicable)
 
-## Directory Structure
-
-```
-project-root/
-    .github/
-        workflows/
-            ci.yml                   # Continuous integration workflow
-                # Test execution on push/PR
-                # Linting and type checking
-                # Build verification
-
-            cd.yml                   # Continuous deployment workflow
-                # Production deployment steps
-                # Environment configuration
-                # Rollback procedures
-
-            pr-checks.yml            # Pull request validation
-                # Code review automation
-                # Preview deployments
-                # Status checks
-
-            release.yml              # Release automation
-                # Version bumping
-                # Changelog generation
-                # Asset publishing
-
-        actions/
-            custom-action/
-                action.yml           # Reusable action definition
-                    # Input parameters
-                    # Output definitions
-                    # Execution steps
-
-        CODEOWNERS                   # Code ownership rules
-            # Team responsibilities
-            # Review requirements
-
-    .windsurf/
-        cicd/
-            workflow-templates/
-                standard-ci.yml      # Standard CI template
-                    # Common job definitions
-                    # Matrix configurations
-                    # Caching strategies
-
-            secrets-reference.md     # Required secrets documentation
-                # Secret names and purposes
-                # Rotation schedules
-                # Access requirements
-```
-
-## Workflow Patterns
-
-### Standard CI
-- Checkout and cache setup
-- Dependency installation
-- Linting and type checking
-- Test execution with coverage
-- Build verification
-
-### Deployment
-- Environment-based triggers
-- Approval gates
-- Blue-green deployment
-- Health checks
-
 ## Instructions
 
 1. **Analyze Requirements**
-   - Identify build and test steps
-   - Map deployment targets
-   - Document secret requirements
-
 2. **Generate Workflows**
-   - Use Cascade for initial generation
-   - Customize triggers and conditions
-   - Add environment variables
-
 3. **Configure Secrets**
-   - Set up repository secrets
-   - Document secret purposes
-   - Plan rotation schedule
-
 4. **Test Workflows**
-   - Run workflows on test branches
-   - Debug failures with Cascade
-   - Optimize for speed
-
 5. **Deploy and Monitor**
-   - Enable on main branch
-   - Set up failure notifications
-   - Monitor execution times
+
+
+See `{baseDir}/references/implementation.md` for detailed implementation guide.
 
 ## Output
 
@@ -128,36 +44,14 @@ project-root/
 
 ## Error Handling
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| Workflow syntax error | Invalid YAML | Validate with actionlint or yamllint |
-| Secret not found | Missing repository secret | Add secret in repository settings |
-| Permission denied | Insufficient GITHUB_TOKEN | Add required permissions to workflow |
-| Cache miss | Cache key mismatch | Update cache key pattern |
-| Deploy failed | Environment misconfiguration | Check environment secrets and settings |
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
 ## Examples
 
-**Example: Generate CI Workflow**
-Request: "Create CI workflow for Node.js with TypeScript"
-Result: Workflow with checkout, cache, install, lint, test, build steps
-
-**Example: Add Deployment Stage**
-Request: "Add staging and production deployment to our pipeline"
-Result: CD workflow with environment-specific jobs, approval gates
-
-**Example: Debug Workflow Failure**
-Request: "Our CI workflow is failing at the test step"
-Result: Analysis of failure, fix for environment variable or dependency issue
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 
 - [Windsurf CI/CD Guide](https://docs.windsurf.ai/features/cicd)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Workflow Syntax Reference](https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions)
-
-## Success Criteria
-
-- Workflows pass validation
-- Successful execution on first commit
-- Pipeline setup in hours vs days

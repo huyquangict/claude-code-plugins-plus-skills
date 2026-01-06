@@ -1,20 +1,31 @@
 #!/usr/bin/env python3
 """
-Claude Skills Validator v2.0 (Enterprise + Strict Quality Mode)
+Claude Code Plugin Validator v3.0 (Intent Solutions Standard)
 
-Ported from nixtla source of truth:
-  /home/jeremy/000-projects/nixtla/004-scripts/validate_skills_v2.py
+Unified validator for all Claude Code plugin content:
+- SKILL.md files (Agent Skills)
+- commands/*.md files (Slash Commands)
+- agents/*.md files (Custom Agents)
 
 Combines:
 - Anthropic 2025 Skills Specification (code.claude.com/docs/en/skills)
-- Intent Solutions Enterprise Standard (6767-c v3.0.0)
-- Nixtla Quality Standards (strict mode)
+- Lee Han Chung Deep Dive (leehanchung.github.io)
+- Intent Solutions 100-Point Grading Rubric
+
+Features:
+- Full validation with errors/warnings
+- Built-in 100-point letter grading (A-F) for skills
+- Progressive Disclosure Architecture (PDA) scoring
+- Automatic grade report generation
 
 Usage:
     python scripts/validate-skills-schema.py [--verbose|-v] [--fail-on-warn]
+    python scripts/validate-skills-schema.py --skills-only
+    python scripts/validate-skills-schema.py --commands-only
+    python scripts/validate-skills-schema.py --agents-only
 
 Author: Jeremy Longshore <jeremy@intentsolutions.io>
-Version: 2.0.0
+Version: 3.0.0
 """
 
 import argparse
@@ -93,6 +104,661 @@ DEFAULT_LICENSE = "MIT"
 # This check is optional via --check-description-budget.
 TOTAL_DESCRIPTION_BUDGET_WARN = 12_000
 TOTAL_DESCRIPTION_BUDGET_ERROR = 15_000
+
+
+# === INTENT SOLUTIONS 100-POINT GRADING RUBRIC ===
+#
+# Based on:
+# - Anthropic Official Best Practices (platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
+# - Lee Han Chung Deep Dive (leehanchung.github.io/blogs/2025/10/26/claude-skills-deep-dive/)
+# - Intent Solutions production grading at scale
+#
+# Grade Scale:
+#   A (90-100): Production-ready
+#   B (80-89):  Good, minor improvements needed
+#   C (70-79):  Adequate, has gaps
+#   D (60-69):  Needs significant work
+#   F (<60):    Major revision required
+
+
+def calculate_grade(score: int) -> str:
+    """Convert numeric score to letter grade."""
+    if score >= 90:
+        return 'A'
+    elif score >= 80:
+        return 'B'
+    elif score >= 70:
+        return 'C'
+    elif score >= 60:
+        return 'D'
+    else:
+        return 'F'
+
+
+def score_progressive_disclosure(path: Path, body: str, fm: dict) -> dict:
+    """
+    Progressive Disclosure Architecture (30 pts max)
+    - Token Economy (10): SKILL.md line count
+    - Layered Structure (10): Has references/ directory with content
+    - Reference Depth (5): References are one level deep only
+    - Navigation Signals (5): Has TOC for long files
+    """
+    breakdown = {}
+    lines = len(body.splitlines())
+    skill_dir = path.parent
+
+    # Token Economy (10 pts) - Per Anthropic: SKILL.md should be concise
+    # 80-150 lines = full points, 150-300 = half, >300 = 0
+    if lines <= 150:
+        breakdown['token_economy'] = (10, "Excellent: ≤150 lines")
+    elif lines <= 300:
+        breakdown['token_economy'] = (5, f"Acceptable: {lines} lines (target ≤150)")
+    else:
+        breakdown['token_economy'] = (0, f"Too long: {lines} lines (target ≤150)")
+
+    # Layered Structure (10 pts) - Has references/ with markdown files
+    refs_dir = skill_dir / "references"
+    if refs_dir.exists():
+        ref_files = list(refs_dir.glob("*.md"))
+        if ref_files:
+            breakdown['layered_structure'] = (10, f"Has references/ with {len(ref_files)} files")
+        else:
+            breakdown['layered_structure'] = (3, "references/ exists but empty")
+    else:
+        # Penalty scales with file length - short files don't need references
+        if lines <= 100:
+            breakdown['layered_structure'] = (8, "No references/ (acceptable for short skill)")
+        elif lines <= 200:
+            breakdown['layered_structure'] = (4, "No references/ (should extract content)")
+        else:
+            breakdown['layered_structure'] = (0, "No references/ (long skill needs extraction)")
+
+    # Reference Depth (5 pts) - One level deep only (no nested subdirs in references/)
+    if refs_dir.exists():
+        nested_dirs = [d for d in refs_dir.iterdir() if d.is_dir()]
+        if not nested_dirs:
+            breakdown['reference_depth'] = (5, "References are flat (good)")
+        else:
+            breakdown['reference_depth'] = (2, f"Nested dirs in references/: {len(nested_dirs)}")
+    else:
+        breakdown['reference_depth'] = (5, "N/A - no references/")
+
+    # Navigation Signals (5 pts) - TOC for files >100 lines
+    has_toc = bool(re.search(r'(?mi)^##?\s*(table of contents|contents|toc)\b', body))
+    has_nav_links = bool(re.search(r'\[.*?\]\(#.*?\)', body))  # Anchor links
+    if lines <= 100:
+        breakdown['navigation_signals'] = (5, "Short file, TOC optional")
+    elif has_toc or has_nav_links:
+        breakdown['navigation_signals'] = (5, "Has navigation/TOC")
+    else:
+        breakdown['navigation_signals'] = (0, "Long file needs TOC/navigation")
+
+    total = sum(v[0] for v in breakdown.values())
+    return {'score': total, 'max': 30, 'breakdown': breakdown}
+
+
+def score_ease_of_use(path: Path, body: str, fm: dict) -> dict:
+    """
+    Ease of Use (25 pts max)
+    - Metadata Quality (10): Complete, well-formed frontmatter
+    - Discoverability (6): Has trigger phrases, "Use when"
+    - Terminology Consistency (4): Consistent naming
+    - Workflow Clarity (5): Clear step-by-step instructions
+    """
+    breakdown = {}
+    desc = str(fm.get('description', '')).lower()
+
+    # Metadata Quality (10 pts)
+    meta_score = 0
+    meta_notes = []
+    if fm.get('name'):
+        meta_score += 2
+    else:
+        meta_notes.append("missing name")
+    if fm.get('description') and len(str(fm.get('description', ''))) >= 50:
+        meta_score += 3
+    else:
+        meta_notes.append("description too short")
+    if fm.get('version'):
+        meta_score += 2
+    else:
+        meta_notes.append("missing version")
+    if fm.get('allowed-tools'):
+        meta_score += 2
+    else:
+        meta_notes.append("missing allowed-tools")
+    if fm.get('author') and '@' in str(fm.get('author', '')):
+        meta_score += 1
+    breakdown['metadata_quality'] = (meta_score, ", ".join(meta_notes) if meta_notes else "Complete metadata")
+
+    # Discoverability (6 pts)
+    disc_score = 0
+    disc_notes = []
+    if 'use when' in desc:
+        disc_score += 3
+        disc_notes.append("has 'Use when'")
+    if 'trigger with' in desc or 'trigger phrase' in desc:
+        disc_score += 3
+        disc_notes.append("has trigger phrases")
+    if not disc_notes:
+        disc_notes.append("missing discovery cues")
+    breakdown['discoverability'] = (disc_score, ", ".join(disc_notes))
+
+    # Terminology Consistency (4 pts)
+    # Check for consistent naming patterns in the skill
+    name = str(fm.get('name', ''))
+    folder = path.parent.name
+    term_score = 4  # Start with full score
+    term_notes = []
+    if name and name != folder:
+        term_score -= 2
+        term_notes.append("name differs from folder")
+    # Check for mixed case in description
+    if any(w.isupper() and len(w) > 3 for w in str(fm.get('description', '')).split()):
+        term_score -= 1
+        term_notes.append("inconsistent casing")
+    breakdown['terminology'] = (max(0, term_score), ", ".join(term_notes) if term_notes else "Consistent terminology")
+
+    # Workflow Clarity (5 pts)
+    workflow_score = 0
+    workflow_notes = []
+    # Check for numbered steps
+    if re.search(r'(?m)^\s*1\.\s+', body):
+        workflow_score += 3
+        workflow_notes.append("has numbered steps")
+    # Check for clear section headers
+    section_count = len(re.findall(r'(?m)^##\s+', body))
+    if section_count >= 5:
+        workflow_score += 2
+        workflow_notes.append(f"{section_count} sections")
+    elif section_count >= 3:
+        workflow_score += 1
+        workflow_notes.append(f"{section_count} sections (add more)")
+    if not workflow_notes:
+        workflow_notes.append("unclear workflow")
+    breakdown['workflow_clarity'] = (workflow_score, ", ".join(workflow_notes))
+
+    total = sum(v[0] for v in breakdown.values())
+    return {'score': total, 'max': 25, 'breakdown': breakdown}
+
+
+def score_utility(path: Path, body: str, fm: dict) -> dict:
+    """
+    Utility (20 pts max)
+    - Problem Solving Power (8): Clear use cases, practical value
+    - Degrees of Freedom (5): Flexible, configurable
+    - Feedback Loops (4): Error handling, validation
+    - Examples & Templates (3): Has working examples
+    """
+    breakdown = {}
+    body_lower = body.lower()
+
+    # Problem Solving Power (8 pts)
+    problem_score = 0
+    problem_notes = []
+    # Check for Overview section with substance
+    if '## overview' in body_lower:
+        overview_match = re.search(r'## overview\s*\n(.*?)(?=\n##|\Z)', body, re.IGNORECASE | re.DOTALL)
+        if overview_match and len(overview_match.group(1).strip()) > 50:
+            problem_score += 4
+            problem_notes.append("has overview")
+    # Check for Prerequisites (shows understanding of requirements)
+    if '## prerequisites' in body_lower:
+        problem_score += 2
+        problem_notes.append("has prerequisites")
+    # Check for Output section
+    if '## output' in body_lower:
+        problem_score += 2
+        problem_notes.append("has output spec")
+    if not problem_notes:
+        problem_notes.append("unclear problem/solution")
+    breakdown['problem_solving'] = (problem_score, ", ".join(problem_notes))
+
+    # Degrees of Freedom (5 pts)
+    freedom_score = 0
+    freedom_notes = []
+    # Check for configuration options
+    if re.search(r'(?i)(optional|configur|parameter|argument|flag|option)', body):
+        freedom_score += 2
+        freedom_notes.append("has options")
+    # Check for multiple approaches
+    if re.search(r'(?i)(alternatively|or use|another approach|you can also)', body):
+        freedom_score += 2
+        freedom_notes.append("shows alternatives")
+    # Check for extensibility hints
+    if re.search(r'(?i)(extend|customize|modify|adapt)', body):
+        freedom_score += 1
+        freedom_notes.append("extensible")
+    if not freedom_notes:
+        freedom_notes.append("rigid implementation")
+    breakdown['degrees_of_freedom'] = (freedom_score, ", ".join(freedom_notes))
+
+    # Feedback Loops (4 pts)
+    feedback_score = 0
+    feedback_notes = []
+    if '## error handling' in body_lower:
+        feedback_score += 2
+        feedback_notes.append("has error handling")
+    if re.search(r'(?i)(validate|verify|check|test|confirm)', body):
+        feedback_score += 1
+        feedback_notes.append("has validation")
+    if re.search(r'(?i)(troubleshoot|debug|diagnose|fix)', body):
+        feedback_score += 1
+        feedback_notes.append("has troubleshooting")
+    if not feedback_notes:
+        feedback_notes.append("no feedback mechanisms")
+    breakdown['feedback_loops'] = (feedback_score, ", ".join(feedback_notes))
+
+    # Examples & Templates (3 pts)
+    examples_score = 0
+    examples_notes = []
+    if '## examples' in body_lower or '**example' in body_lower:
+        examples_score += 2
+        examples_notes.append("has examples")
+    if '```' in body:
+        code_blocks = len(re.findall(r'```', body)) // 2
+        if code_blocks >= 2:
+            examples_score += 1
+            examples_notes.append(f"{code_blocks} code blocks")
+    if not examples_notes:
+        examples_notes.append("no examples")
+    breakdown['examples'] = (examples_score, ", ".join(examples_notes))
+
+    total = sum(v[0] for v in breakdown.values())
+    return {'score': total, 'max': 20, 'breakdown': breakdown}
+
+
+def score_spec_compliance(path: Path, body: str, fm: dict) -> dict:
+    """
+    Spec Compliance (15 pts max)
+    - Frontmatter Validity (5): Valid YAML, no parse errors
+    - Name Conventions (4): Kebab-case, proper length
+    - Description Quality (4): Proper length, no forbidden words
+    - Optional Fields (2): Proper use of optional fields
+    """
+    breakdown = {}
+    name = str(fm.get('name', ''))
+    desc = str(fm.get('description', ''))
+
+    # Frontmatter Validity (5 pts)
+    fm_score = 5  # Start with full score
+    fm_notes = []
+    required = {'name', 'description', 'allowed-tools', 'version', 'author', 'license'}
+    missing = required - set(fm.keys())
+    if missing:
+        fm_score -= min(len(missing), 4)
+        fm_notes.append(f"missing: {', '.join(missing)}")
+    if not fm_notes:
+        fm_notes.append("valid frontmatter")
+    breakdown['frontmatter_validity'] = (max(0, fm_score), ", ".join(fm_notes))
+
+    # Name Conventions (4 pts)
+    name_score = 4
+    name_notes = []
+    if not re.match(r'^[a-z0-9][a-z0-9-]*[a-z0-9]$', name) and len(name) > 1:
+        name_score -= 2
+        name_notes.append("not kebab-case")
+    if len(name) > 64:
+        name_score -= 1
+        name_notes.append("name too long")
+    if name != path.parent.name:
+        name_score -= 1
+        name_notes.append("name/folder mismatch")
+    if not name_notes:
+        name_notes.append("proper naming")
+    breakdown['name_conventions'] = (max(0, name_score), ", ".join(name_notes))
+
+    # Description Quality (4 pts)
+    desc_score = 4
+    desc_notes = []
+    if len(desc) < 50:
+        desc_score -= 2
+        desc_notes.append("too short")
+    if len(desc) > 1024:
+        desc_score -= 2
+        desc_notes.append("too long")
+    desc_lower = desc.lower()
+    if 'i can' in desc_lower or 'i will' in desc_lower:
+        desc_score -= 1
+        desc_notes.append("uses first person")
+    if 'you can' in desc_lower or 'you should' in desc_lower:
+        desc_score -= 1
+        desc_notes.append("uses second person")
+    if not desc_notes:
+        desc_notes.append("good description")
+    breakdown['description_quality'] = (max(0, desc_score), ", ".join(desc_notes))
+
+    # Optional Fields (2 pts)
+    opt_score = 2
+    opt_notes = []
+    if 'model' in fm:
+        model = fm['model']
+        if model not in ['inherit', 'sonnet', 'haiku'] and not str(model).startswith('claude-'):
+            opt_score -= 1
+            opt_notes.append("invalid model value")
+    if not opt_notes:
+        opt_notes.append("optional fields ok")
+    breakdown['optional_fields'] = (opt_score, ", ".join(opt_notes))
+
+    total = sum(v[0] for v in breakdown.values())
+    return {'score': total, 'max': 15, 'breakdown': breakdown}
+
+
+def score_writing_style(path: Path, body: str, fm: dict) -> dict:
+    """
+    Writing Style (10 pts max)
+    - Voice & Tense (4): Imperative voice, present tense
+    - Objectivity (3): No first/second person in body
+    - Conciseness (3): Not overly verbose
+    """
+    breakdown = {}
+
+    # Voice & Tense (4 pts)
+    voice_score = 4
+    voice_notes = []
+    # Check for imperative language (good)
+    imperative_verbs = ['create', 'use', 'run', 'execute', 'configure', 'set', 'add', 'remove', 'check', 'verify']
+    has_imperative = any(re.search(rf'(?m)^\s*\d+\.\s*{v}', body, re.IGNORECASE) for v in imperative_verbs)
+    if not has_imperative:
+        voice_score -= 2
+        voice_notes.append("use imperative voice")
+    if not voice_notes:
+        voice_notes.append("good voice")
+    breakdown['voice_tense'] = (voice_score, ", ".join(voice_notes))
+
+    # Objectivity (3 pts)
+    obj_score = 3
+    obj_notes = []
+    body_lower = body.lower()
+    if 'you should' in body_lower or 'you can' in body_lower or 'you will' in body_lower:
+        obj_score -= 1
+        obj_notes.append("has second person")
+    if ' i ' in body_lower or 'i can' in body_lower or "i'll" in body_lower:
+        obj_score -= 1
+        obj_notes.append("has first person")
+    if not obj_notes:
+        obj_notes.append("objective")
+    breakdown['objectivity'] = (max(0, obj_score), ", ".join(obj_notes))
+
+    # Conciseness (3 pts)
+    conc_score = 3
+    conc_notes = []
+    word_count = len(body.split())
+    lines = len(body.splitlines())
+    if word_count > 3000:
+        conc_score -= 2
+        conc_notes.append(f"verbose ({word_count} words)")
+    elif word_count > 2000:
+        conc_score -= 1
+        conc_notes.append(f"lengthy ({word_count} words)")
+    if lines > 400:
+        conc_score -= 1
+        conc_notes.append(f"many lines ({lines})")
+    if not conc_notes:
+        conc_notes.append("concise")
+    breakdown['conciseness'] = (max(0, conc_score), ", ".join(conc_notes))
+
+    total = sum(v[0] for v in breakdown.values())
+    return {'score': total, 'max': 10, 'breakdown': breakdown}
+
+
+def calculate_modifiers(path: Path, body: str, fm: dict) -> dict:
+    """
+    Modifiers (±15 pts)
+    Bonuses: gerund name, grep-friendly, exemplary examples
+    Penalties: first/second person description, no TOC on long file
+    """
+    modifiers = {}
+    name = str(fm.get('name', ''))
+    desc = str(fm.get('description', ''))
+    lines = len(body.splitlines())
+
+    # Bonuses (up to +5)
+    # Gerund-style name (verb-ing pattern) +1
+    gerund_suffixes = ['ing', 'tion', 'ment', 'ness']
+    if any(name.endswith(f'-{s}') or name.endswith(s) for s in ['ing']):
+        modifiers['gerund_name'] = (+1, "gerund-style name")
+
+    # Grep-friendly structure (clear section markers) +1
+    sections = len(re.findall(r'(?m)^##\s+', body))
+    if sections >= 7:
+        modifiers['grep_friendly'] = (+1, "grep-friendly structure")
+
+    # Exemplary examples (multiple labeled examples) +2
+    example_count = len(re.findall(r'(?i)\*\*example[:\s]', body))
+    if example_count >= 3:
+        modifiers['exemplary_examples'] = (+2, f"{example_count} labeled examples")
+
+    # Resources section with external links +1
+    if '## resources' in body.lower():
+        external_links = len(re.findall(r'\[.*?\]\(https?://', body))
+        if external_links >= 2:
+            modifiers['external_resources'] = (+1, f"{external_links} external links")
+
+    # Penalties (up to -5)
+    # First/second person in description -2
+    desc_lower = desc.lower()
+    if 'i can' in desc_lower or 'i will' in desc_lower or 'you can' in desc_lower or 'you should' in desc_lower:
+        modifiers['person_in_desc'] = (-2, "first/second person in description")
+
+    # No TOC on long file -2
+    has_toc = bool(re.search(r'(?mi)^##?\s*(table of contents|contents|toc)\b', body))
+    if lines > 150 and not has_toc:
+        modifiers['missing_toc'] = (-2, "long file needs TOC")
+
+    # XML tags in body (anti-pattern) -1
+    if '<' in body and '>' in body and re.search(r'<[a-z]+>', body):
+        modifiers['xml_tags'] = (-1, "XML-like tags in body")
+
+    total = sum(v[0] for v in modifiers.values())
+    # Cap modifiers at ±15
+    total = max(-15, min(15, total))
+    return {'score': total, 'max_bonus': 5, 'max_penalty': -5, 'items': modifiers}
+
+
+def grade_skill(path: Path, body: str, fm: dict) -> dict:
+    """
+    Calculate Intent Solutions 100-point grade for a skill.
+
+    Returns dict with:
+    - score: total points (0-100)
+    - grade: letter grade (A-F)
+    - breakdown: per-pillar scores
+    """
+    pda = score_progressive_disclosure(path, body, fm)
+    ease = score_ease_of_use(path, body, fm)
+    utility = score_utility(path, body, fm)
+    spec = score_spec_compliance(path, body, fm)
+    style = score_writing_style(path, body, fm)
+    mods = calculate_modifiers(path, body, fm)
+
+    base_score = pda['score'] + ease['score'] + utility['score'] + spec['score'] + style['score']
+    total_score = base_score + mods['score']
+
+    # Clamp to 0-100
+    total_score = max(0, min(100, total_score))
+
+    return {
+        'score': total_score,
+        'grade': calculate_grade(total_score),
+        'breakdown': {
+            'progressive_disclosure': pda,
+            'ease_of_use': ease,
+            'utility': utility,
+            'spec_compliance': spec,
+            'writing_style': style,
+            'modifiers': mods,
+        }
+    }
+
+
+# === COMMAND VALIDATION ===
+
+# Valid categories for commands
+VALID_CMD_CATEGORIES = [
+    'git', 'deployment', 'security', 'testing', 'documentation',
+    'database', 'api', 'frontend', 'backend', 'devops', 'forecasting',
+    'analytics', 'migration', 'monitoring', 'other'
+]
+
+VALID_DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'expert']
+
+
+def find_command_files(root: Path) -> List[Path]:
+    """Find all command markdown files in plugins/."""
+    results = []
+    plugins_dir = root / "plugins"
+    if plugins_dir.exists():
+        for cmd_file in plugins_dir.rglob("commands/*.md"):
+            if cmd_file.is_file():
+                results.append(cmd_file)
+    return results
+
+
+def validate_command(path: Path) -> Dict[str, Any]:
+    """Validate a command markdown file."""
+    try:
+        content = path.read_text(encoding='utf-8')
+    except Exception as e:
+        return {'fatal': f'Cannot read file: {e}'}
+
+    # Extract frontmatter
+    m = RE_FRONTMATTER.match(content)
+    if not m:
+        return {'fatal': 'No frontmatter found'}
+
+    try:
+        fm = yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError as e:
+        return {'fatal': f'Invalid YAML: {e}'}
+
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    # Required: name
+    if 'name' not in fm:
+        errors.append("[command] Missing required field: name")
+    else:
+        name = str(fm['name'])
+        if not re.match(r'^[a-z][a-z0-9-]*[a-z0-9]$', name) and len(name) > 1:
+            warnings.append("[command] 'name' should be kebab-case")
+        if name != path.stem:
+            warnings.append(f"[command] 'name' '{name}' should match filename '{path.stem}.md'")
+
+    # Required: description
+    if 'description' not in fm:
+        errors.append("[command] Missing required field: description")
+    else:
+        desc = str(fm['description'])
+        if len(desc) < 10:
+            errors.append("[command] 'description' must be at least 10 characters")
+        if len(desc) > 80:
+            warnings.append("[command] 'description' should be 80 characters or less")
+
+    # Optional: shortcut
+    if 'shortcut' in fm:
+        shortcut = str(fm['shortcut'])
+        if len(shortcut) < 1 or len(shortcut) > 4:
+            warnings.append("[command] 'shortcut' should be 1-4 characters")
+        elif not shortcut.islower():
+            warnings.append("[command] 'shortcut' should be lowercase")
+        elif not shortcut.isalpha():
+            warnings.append("[command] 'shortcut' should contain only letters")
+
+    # Optional: category
+    if 'category' in fm:
+        if fm['category'] not in VALID_CMD_CATEGORIES:
+            warnings.append(f"[command] Unknown category: {fm['category']}")
+
+    # Optional: difficulty
+    if 'difficulty' in fm:
+        if fm['difficulty'] not in VALID_DIFFICULTIES:
+            warnings.append(f"[command] Unknown difficulty: {fm['difficulty']}")
+
+    return {'errors': errors, 'warnings': warnings, 'type': 'command'}
+
+
+# === AGENT VALIDATION ===
+
+VALID_EXPERTISE = ['intermediate', 'advanced', 'expert']
+VALID_PRIORITIES = ['low', 'medium', 'high', 'critical']
+
+
+def find_agent_files(root: Path) -> List[Path]:
+    """Find all agent markdown files in plugins/."""
+    results = []
+    plugins_dir = root / "plugins"
+    if plugins_dir.exists():
+        for agent_file in plugins_dir.rglob("agents/*.md"):
+            if agent_file.is_file():
+                results.append(agent_file)
+    return results
+
+
+def validate_agent(path: Path) -> Dict[str, Any]:
+    """Validate an agent markdown file."""
+    try:
+        content = path.read_text(encoding='utf-8')
+    except Exception as e:
+        return {'fatal': f'Cannot read file: {e}'}
+
+    # Extract frontmatter
+    m = RE_FRONTMATTER.match(content)
+    if not m:
+        return {'fatal': 'No frontmatter found'}
+
+    try:
+        fm = yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError as e:
+        return {'fatal': f'Invalid YAML: {e}'}
+
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    # Required: name
+    if 'name' not in fm:
+        errors.append("[agent] Missing required field: name")
+    else:
+        name = str(fm['name'])
+        if not re.match(r'^[a-z][a-z0-9-]*[a-z0-9]$', name) and len(name) > 1:
+            warnings.append("[agent] 'name' should be kebab-case")
+
+    # Required: description (20 chars min for agents)
+    if 'description' not in fm:
+        errors.append("[agent] Missing required field: description")
+    else:
+        desc = str(fm['description'])
+        if len(desc) < 20:
+            errors.append("[agent] 'description' must be at least 20 characters")
+        if len(desc) > 200:
+            warnings.append("[agent] 'description' should be 200 characters or less")
+
+    # Recommended: capabilities
+    if 'capabilities' not in fm:
+        warnings.append("[agent] Missing recommended field: capabilities")
+    elif not isinstance(fm['capabilities'], list):
+        warnings.append("[agent] 'capabilities' should be an array")
+    else:
+        caps = fm['capabilities']
+        if len(caps) < 2:
+            warnings.append("[agent] 'capabilities' should have at least 2 items")
+        if len(caps) > 10:
+            warnings.append("[agent] 'capabilities' should have 10 or fewer items")
+        for i, cap in enumerate(caps):
+            if not isinstance(cap, str):
+                errors.append(f"[agent] 'capabilities[{i}]' must be a string")
+
+    # Optional: expertise_level
+    if 'expertise_level' in fm:
+        if fm['expertise_level'] not in VALID_EXPERTISE:
+            warnings.append(f"[agent] Unknown expertise_level: {fm['expertise_level']}")
+
+    # Optional: activation_priority
+    if 'activation_priority' in fm:
+        if fm['activation_priority'] not in VALID_PRIORITIES:
+            warnings.append(f"[agent] Unknown activation_priority: {fm['activation_priority']}")
+
+    return {'errors': errors, 'warnings': warnings, 'type': 'agent'}
 
 
 # === UTILITY FUNCTIONS ===
@@ -749,12 +1415,17 @@ def validate_skill(path: Path) -> Dict[str, Any]:
     warnings.extend(resource_warnings)
 
     description = str(fm.get("description") or "")
+
+    # Calculate Intent Solutions grade
+    grade_result = grade_skill(path, body, fm)
+
     return {
         'errors': errors,
         'warnings': warnings,
         'word_count': estimate_word_count(content),
         'line_count': len(body.splitlines()),
         'description_length': len(description),
+        'grade': grade_result,
     }
 
 
@@ -762,14 +1433,9 @@ def validate_skill(path: Path) -> Dict[str, Any]:
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
-    skills = find_skill_files(repo_root)
-
-    if not skills:
-        print("No SKILL.md files found - nothing to validate.")
-        return 0
 
     parser = argparse.ArgumentParser(add_help=True)
-    parser.add_argument("--verbose", "-v", action="store_true", help="Print per-file OK lines")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Print per-file OK lines and grades")
     parser.add_argument(
         "--fail-on-warn",
         action="store_true",
@@ -780,14 +1446,61 @@ def main() -> int:
         action="store_true",
         help="Warn if total skill description chars exceed token budget guidance.",
     )
+    parser.add_argument(
+        "--min-grade",
+        type=str,
+        default=None,
+        choices=['A', 'B', 'C', 'D'],
+        help="Fail if any skill scores below this grade (e.g., --min-grade B)",
+    )
+    parser.add_argument(
+        "--show-low-grades",
+        action="store_true",
+        help="Show skills with D or F grades even without verbose mode",
+    )
+    parser.add_argument(
+        "--skills-only",
+        action="store_true",
+        help="Only validate SKILL.md files",
+    )
+    parser.add_argument(
+        "--commands-only",
+        action="store_true",
+        help="Only validate command files",
+    )
+    parser.add_argument(
+        "--agents-only",
+        action="store_true",
+        help="Only validate agent files",
+    )
     args, _unknown = parser.parse_known_args()
     verbose = args.verbose
 
-    print(f"🔍 CLAUDE CODE SKILLS VALIDATOR v2.0")
-    print(f"   Enterprise + Nixtla Strict Quality Mode")
-    print(f"   Ported from nixtla source of truth")
+    # Determine what to validate
+    validate_skills = not args.commands_only and not args.agents_only
+    validate_commands = not args.skills_only and not args.agents_only
+    validate_agents = not args.skills_only and not args.commands_only
+
+    # Find files based on what we're validating
+    skills = find_skill_files(repo_root) if validate_skills else []
+    commands = find_command_files(repo_root) if validate_commands else []
+    agents = find_agent_files(repo_root) if validate_agents else []
+
+    total_files = len(skills) + len(commands) + len(agents)
+    if total_files == 0:
+        print("No files found to validate.")
+        return 0
+
+    print(f"🔍 CLAUDE CODE PLUGIN VALIDATOR v3.0")
+    print(f"   Intent Solutions Standard (100-Point Grading)")
     print(f"{'=' * 70}\n")
-    print(f"Found {len(skills)} SKILL.md files to validate.\n")
+    if validate_skills:
+        print(f"Found {len(skills)} SKILL.md files")
+    if validate_commands:
+        print(f"Found {len(commands)} command files")
+    if validate_agents:
+        print(f"Found {len(agents)} agent files")
+    print()
 
     total_errors = 0
     total_warnings = 0
@@ -795,6 +1508,14 @@ def main() -> int:
     files_with_errors = []
     files_with_warnings = []
     files_compliant = []
+
+    # Grade tracking
+    grade_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0}
+    grade_scores = []  # For average calculation
+    low_grade_skills = []  # Skills with D or F
+    below_min_grade = []  # Skills below --min-grade threshold
+
+    grade_thresholds = {'A': 90, 'B': 80, 'C': 70, 'D': 60}
 
     for skill in skills:
         rel = skill.relative_to(repo_root)
@@ -807,6 +1528,23 @@ def main() -> int:
             continue
 
         has_issues = False
+
+        # Track grade
+        grade_info = result.get('grade', {})
+        score = grade_info.get('score', 0)
+        letter = grade_info.get('grade', 'F')
+        grade_counts[letter] += 1
+        grade_scores.append(score)
+
+        # Check min-grade threshold
+        if args.min_grade:
+            min_threshold = grade_thresholds.get(args.min_grade, 0)
+            if score < min_threshold:
+                below_min_grade.append((str(rel), score, letter))
+
+        # Track low grades
+        if letter in ['D', 'F']:
+            low_grade_skills.append((str(rel), score, letter, grade_info.get('breakdown', {})))
 
         if result['errors']:
             print(f"❌ {rel}:")
@@ -827,26 +1565,131 @@ def main() -> int:
             has_issues = True
 
         if verbose and not has_issues:
-            print(f"✅ {rel} - OK ({result['word_count']} words, {result['line_count']} lines)")
+            print(f"✅ {rel} - {letter} ({score}/100) ({result['word_count']} words, {result['line_count']} lines)")
 
         if not result['errors'] and not result['warnings']:
             files_compliant.append(str(rel))
 
         total_description_chars += int(result.get("description_length") or 0)
 
+    # Validate commands
+    for cmd in commands:
+        rel = cmd.relative_to(repo_root)
+        result = validate_command(cmd)
+
+        if 'fatal' in result:
+            print(f"❌ {rel} (command): FATAL - {result['fatal']}")
+            total_errors += 1
+            files_with_errors.append(str(rel))
+            continue
+
+        if result['errors']:
+            print(f"❌ {rel} (command):")
+            for error in result['errors']:
+                print(f"   ERROR: {error}")
+            total_errors += len(result['errors'])
+            files_with_errors.append(str(rel))
+        elif result['warnings']:
+            print(f"⚠️  {rel} (command):")
+            for warning in result['warnings']:
+                print(f"   WARN: {warning}")
+            total_warnings += len(result['warnings'])
+            files_with_warnings.append(str(rel))
+        else:
+            files_compliant.append(str(rel))
+            if verbose:
+                print(f"✅ {rel} (command) - OK")
+
+    # Validate agents
+    for agent in agents:
+        rel = agent.relative_to(repo_root)
+        result = validate_agent(agent)
+
+        if 'fatal' in result:
+            print(f"❌ {rel} (agent): FATAL - {result['fatal']}")
+            total_errors += 1
+            files_with_errors.append(str(rel))
+            continue
+
+        if result['errors']:
+            print(f"❌ {rel} (agent):")
+            for error in result['errors']:
+                print(f"   ERROR: {error}")
+            total_errors += len(result['errors'])
+            files_with_errors.append(str(rel))
+        elif result['warnings']:
+            print(f"⚠️  {rel} (agent):")
+            for warning in result['warnings']:
+                print(f"   WARN: {warning}")
+            total_warnings += len(result['warnings'])
+            files_with_warnings.append(str(rel))
+        else:
+            files_compliant.append(str(rel))
+            if verbose:
+                print(f"✅ {rel} (agent) - OK")
+
+    # Show low grade skills if requested
+    if args.show_low_grades and low_grade_skills:
+        print(f"\n{'=' * 70}")
+        print(f"📉 LOW GRADE SKILLS (D or F)")
+        print(f"{'=' * 70}")
+        for path, score, letter, breakdown in low_grade_skills:
+            print(f"\n{letter} ({score}/100): {path}")
+            if 'progressive_disclosure' in breakdown:
+                pda = breakdown['progressive_disclosure']
+                print(f"   PDA: {pda['score']}/{pda['max']}")
+                for key, (pts, note) in pda.get('breakdown', {}).items():
+                    print(f"      {key}: {pts} pts - {note}")
+
     # Summary
     print(f"\n{'=' * 70}")
     print(f"📊 VALIDATION SUMMARY")
     print(f"{'=' * 70}")
-    print(f"Total skills validated: {len(skills)}")
+    total_validated = len(skills) + len(commands) + len(agents)
+    if skills:
+        print(f"Skills validated: {len(skills)}")
+    if commands:
+        print(f"Commands validated: {len(commands)}")
+    if agents:
+        print(f"Agents validated: {len(agents)}")
+    print(f"Total files: {total_validated}")
     print(f"✅ Fully compliant: {len(files_compliant)}")
     print(f"⚠️  Warnings only: {len(files_with_warnings)}")
     print(f"❌ With errors: {len(files_with_errors)}")
     print(f"{'=' * 70}")
 
     # Compliance rate
-    compliant_pct = (len(files_compliant) / len(skills) * 100) if skills else 0
+    compliant_pct = (len(files_compliant) / total_validated * 100) if total_validated else 0
     print(f"\n📈 Compliance rate: {compliant_pct:.1f}%")
+
+    # Grade Distribution
+    print(f"\n{'=' * 70}")
+    print(f"📊 INTENT SOLUTIONS GRADE REPORT")
+    print(f"{'=' * 70}")
+
+    avg_score = sum(grade_scores) / len(grade_scores) if grade_scores else 0
+    avg_grade = calculate_grade(int(avg_score))
+    print(f"Average Score: {avg_score:.1f}/100 ({avg_grade})")
+    print()
+    print("Grade Distribution:")
+    for letter in ['A', 'B', 'C', 'D', 'F']:
+        count = grade_counts[letter]
+        pct = (count / len(skills) * 100) if skills else 0
+        bar = '█' * int(pct / 2)
+        emoji = {'A': '🏆', 'B': '✅', 'C': '⚠️', 'D': '📉', 'F': '❌'}[letter]
+        print(f"  {emoji} {letter}: {count:4d} ({pct:5.1f}%) {bar}")
+
+    # Quality metrics
+    print()
+    a_b_count = grade_counts['A'] + grade_counts['B']
+    a_b_pct = (a_b_count / len(skills) * 100) if skills else 0
+    print(f"Production Ready (A+B): {a_b_count} ({a_b_pct:.1f}%)")
+
+    d_f_count = grade_counts['D'] + grade_counts['F']
+    d_f_pct = (d_f_count / len(skills) * 100) if skills else 0
+    print(f"Needs Work (D+F): {d_f_count} ({d_f_pct:.1f}%)")
+
+    print(f"{'=' * 70}")
 
     if args.check_description_budget and total_description_chars >= TOTAL_DESCRIPTION_BUDGET_WARN:
         msg = (
@@ -855,6 +1698,15 @@ def main() -> int:
         )
         print(msg)
         total_warnings += 1
+
+    # Check min-grade violations
+    if args.min_grade and below_min_grade:
+        print(f"\n❌ {len(below_min_grade)} skill(s) below minimum grade {args.min_grade}:")
+        for path, score, letter in below_min_grade[:10]:  # Show first 10
+            print(f"   {letter} ({score}/100): {path}")
+        if len(below_min_grade) > 10:
+            print(f"   ... and {len(below_min_grade) - 10} more")
+        return 1
 
     if total_errors > 0:
         print(f"\n❌ Validation FAILED with {total_errors} errors")
@@ -872,8 +1724,8 @@ def main() -> int:
     else:
         print(f"\n✅ All skills fully compliant!")
         print("   - Anthropic 2025 spec ✓")
-        print("   - Enterprise standard ✓")
-        print("   - Nixtla quality standards ✓")
+        print("   - Intent Solutions standard ✓")
+        print("   - 100-point grading ✓")
         return 0
 
 

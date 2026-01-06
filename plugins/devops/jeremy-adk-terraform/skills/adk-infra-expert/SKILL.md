@@ -7,9 +7,8 @@ version: 1.0.0
 author: Jeremy Longshore <jeremy@intentsolutions.io>
 license: MIT
 ---
-# Adk Infra Expert
 
-This skill provides automated assistance for adk infra expert tasks.
+# Adk Infra Expert
 
 ## Overview
 
@@ -36,93 +35,17 @@ Before using this skill, ensure:
 7. **Configure Monitoring**: Set up Cloud Monitoring dashboards and alerts
 8. **Validate Deployment**: Test agent endpoint and verify all components
 
-## Examples
-
-**Example: Stand up an ADK Agent Engine runtime**
-- Inputs: `project_id`, `region`, desired model, and whether Code Execution + Memory Bank are enabled.
-- Outputs: Terraform resources for the runtime + IAM + VPC/PSC, plus validation commands to confirm the agent is reachable and permissions are correct.
-
 ## Output
 
-**Agent Engine Deployment:**
-```hcl
-# {baseDir}/terraform/main.tf
-resource "google_vertex_ai_agent_runtime" "adk_agent" {
-  project  = var.project_id
-  location = var.region
-  display_name = "adk-production-agent"
 
-  agent_config {
-    model = "gemini-2.5-flash"
-    code_execution {
-      enabled = true
-      state_ttl_days = 14
-      sandbox_type = "SECURE_ISOLATED"
-    }
-    memory_bank {
-      enabled = true
-    }
-  }
-
-  vpc_config {
-    vpc_network = google_compute_network.agent_vpc.id
-    private_service_connect {
-      enabled = true
-    }
-  }
-}
-```
-
-**VPC Service Controls:**
-```hcl
-resource "google_access_context_manager_service_perimeter" "adk_perimeter" {
-  parent = "accessPolicies/${var.access_policy_id}"
-  title  = "ADK Agent Engine Perimeter"
-
-  status {
-    restricted_services = [
-      "aiplatform.googleapis.com",
-      "run.googleapis.com"
-    ]
-  }
-}
-```
-
-**IAM Configuration:**
-```hcl
-resource "google_service_account" "adk_agent" {
-  account_id   = "adk-agent-sa"
-  display_name = "ADK Agent Service Account"
-}
-
-resource "google_project_iam_member" "agent_identity" {
-  project = var.project_id
-  role    = "roles/aiplatform.agentUser"
-  member  = "serviceAccount:${google_service_account.adk_agent.email}"
-}
-```
 
 ## Error Handling
 
-**Terraform State Lock**
-- Error: "Error acquiring the state lock"
-- Solution: Use `terraform force-unlock <lock-id>` or wait for lock expiry
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
-**API Not Enabled**
-- Error: "Vertex AI API has not been used"
-- Solution: Enable with `gcloud services enable aiplatform.googleapis.com`
+## Examples
 
-**VPC-SC Configuration**
-- Error: "Access denied by VPC Service Controls"
-- Solution: Add project to service perimeter or adjust ingress/egress policies
-
-**IAM Permission Denied**
-- Error: "does not have required permission"
-- Solution: Grant roles/owner temporarily to service account running Terraform
-
-**Resource Already Exists**
-- Error: "Resource already exists"
-- Solution: Import existing resource or use data source instead
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 

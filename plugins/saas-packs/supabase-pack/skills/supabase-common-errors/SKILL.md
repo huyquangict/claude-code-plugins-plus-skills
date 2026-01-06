@@ -14,9 +14,6 @@ author: Jeremy Longshore <jeremy@intentsolutions.io>
 
 # Supabase Common Errors
 
-## Overview
-Quick reference for the top 10 most common Supabase errors and their solutions.
-
 ## Prerequisites
 - Supabase SDK installed
 - API credentials configured
@@ -40,70 +37,13 @@ Follow the solution steps for your specific error.
 
 ## Error Handling
 
-### Invalid JWT
-**Error Message:**
-```
-Invalid JWT: expired or malformed
-```
-
-**Cause:** JWT token has expired or is incorrectly formatted
-
-**Solution:**
-```bash
-Check token expiry with supabase.auth.getSession() and call refreshSession() if needed
-```
-
----
-
-### RLS Policy Violation
-**Error Message:**
-```
-new row violates row-level security policy for table
-```
-
-**Cause:** Row Level Security (RLS) policy is blocking the operation
-
-**Solution:**
-Check RLS policies in dashboard or via pg_policies table. Ensure user has required role.
-
----
-
-### Connection Pool Exhausted
-**Error Message:**
-```
-too many clients already
-```
-
-**Cause:** Connection pool limit reached due to too many concurrent connections
-
-**Solution:**
-```typescript
-Use connection pooling mode in Supabase dashboard. Switch to Session mode or pgBouncer.
-```
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
 ## Examples
 
-### Quick Diagnostic Commands
-```bash
-# Check Supabase status
-curl -s https://status.supabase.com
-
-# Verify API connectivity
-curl -I https://api.supabase.com
-
-# Check local configuration
-env | grep SUPABASE
-```
-
-### Escalation Path
-1. Collect evidence with `supabase-debug-bundle`
-2. Check Supabase status page
-3. Contact support with request ID
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 - [Supabase Status Page](https://status.supabase.com)
 - [Supabase Support](https://supabase.com/docs/support)
 - [Supabase Error Codes](https://supabase.com/docs/errors)
-
-## Next Steps
-For comprehensive debugging, see `supabase-debug-bundle`.

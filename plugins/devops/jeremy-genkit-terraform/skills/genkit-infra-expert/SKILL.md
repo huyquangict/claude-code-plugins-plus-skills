@@ -7,9 +7,8 @@ version: 1.0.0
 author: Jeremy Longshore <jeremy@intentsolutions.io>
 license: MIT
 ---
-# Genkit Infra Expert
 
-This skill provides automated assistance for genkit infra expert tasks.
+# Genkit Infra Expert
 
 ## Overview
 
@@ -36,75 +35,17 @@ Before using this skill, ensure:
 7. **Enable Auto-scaling**: Configure min/max instances
 8. **Validate Deployment**: Test Genkit flows via HTTP endpoints
 
-## Examples
-
-**Example: Cloud Run deployment for a Genkit API**
-- Inputs: container image, region, min/max instances, and required model API keys.
-- Outputs: Terraform for Cloud Run + Secret Manager bindings and a smoke test curl command that hits a health endpoint / flow route.
-
 ## Output
 
-**Firebase Functions:**
-```hcl
-# {baseDir}/terraform/functions.tf
-resource "google_cloudfunctions2_function" "genkit_function" {
-  name     = "genkit-ai-flow"
-  location = var.region
 
-  build_config {
-    runtime     = "nodejs20"
-    entry_point = "genkitFlow"
-  }
-
-  service_config {
-    max_instance_count = 100
-    available_memory   = "512Mi"
-    timeout_seconds    = 300
-  }
-}
-```
-
-**Cloud Run Service:**
-```hcl
-resource "google_cloud_run_v2_service" "genkit_service" {
-  name     = "genkit-api"
-  location = var.region
-
-  template {
-    scaling {
-      min_instance_count = 1
-      max_instance_count = 10
-    }
-    containers {
-      image = "gcr.io/${var.project_id}/genkit-app:latest"
-      resources {
-        limits = {
-          cpu = "2"
-          memory = "1Gi"
-        }
-      }
-    }
-  }
-}
-```
 
 ## Error Handling
 
-**Build Failures**
-- Error: "Cloud Function build failed"
-- Solution: Check package.json dependencies and Node.js runtime version
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
-**Cold Start Latency**
-- Warning: "High latency on first request"
-- Solution: Set min_instance_count >= 1 to keep warm instances
+## Examples
 
-**Secret Access Denied**
-- Error: "Permission denied accessing secret"
-- Solution: Grant secretAccessor role to Cloud Run/Functions service account
-
-**Memory Exceeded**
-- Error: "Container killed: out of memory"
-- Solution: Increase available_memory or optimize Genkit flow memory usage
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 

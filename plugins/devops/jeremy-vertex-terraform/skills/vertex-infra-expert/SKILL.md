@@ -7,9 +7,8 @@ version: 1.0.0
 author: Jeremy Longshore <jeremy@intentsolutions.io>
 license: MIT
 ---
-# Vertex Infra Expert
 
-This skill provides automated assistance for vertex infra expert tasks.
+# Vertex Infra Expert
 
 ## Overview
 
@@ -36,83 +35,17 @@ Before using this skill, ensure:
 7. **Apply IAM Policies**: Grant least privilege access to AI services
 8. **Validate Deployment**: Test endpoints and verify model availability
 
-## Examples
-
-**Example: Deploy a Gemini endpoint + vector search index**
-- Inputs: `project_id`, `region`, KMS key (optional), embedding dimensions, and autoscaling bounds.
-- Outputs: Terraform for endpoint + deployed model + index, and a smoke test that queries the endpoint and verifies index build status.
-
 ## Output
 
-**Gemini Model Endpoint:**
-```hcl
-# {baseDir}/terraform/vertex-endpoints.tf
-resource "google_vertex_ai_endpoint" "gemini_endpoint" {
-  name         = "gemini-25-flash-endpoint"
-  display_name = "Gemini 2.5 Flash Production"
-  location     = var.region
 
-  encryption_spec {
-    kms_key_name = google_kms_crypto_key.vertex_key.id
-  }
-}
-
-resource "google_vertex_ai_deployed_model" "gemini_deployment" {
-  endpoint = google_vertex_ai_endpoint.gemini_endpoint.id
-  model    = "publishers/google/models/gemini-2.5-flash"
-
-  automatic_resources {
-    min_replica_count = 1
-    max_replica_count = 5
-  }
-}
-```
-
-**Vector Search Index:**
-```hcl
-resource "google_vertex_ai_index" "embeddings_index" {
-  display_name = "production-embeddings"
-  location     = var.region
-
-  metadata {
-    contents_delta_uri = "gs://${google_storage_bucket.embeddings.name}/index"
-    config {
-      dimensions = 768
-      approximate_neighbors_count = 150
-      distance_measure_type = "DOT_PRODUCT_DISTANCE"
-
-      algorithm_config {
-        tree_ah_config {
-          leaf_node_embedding_count = 1000
-          leaf_nodes_to_search_percent = 10
-        }
-      }
-    }
-  }
-}
-```
 
 ## Error Handling
 
-**API Not Enabled**
-- Error: "Vertex AI API has not been used in project"
-- Solution: Enable with `gcloud services enable aiplatform.googleapis.com`
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
-**Model Not Found**
-- Error: "Model publishers/google/models/... not found"
-- Solution: Verify model ID and region availability
+## Examples
 
-**Quota Exceeded**
-- Error: "Quota exceeded for resource"
-- Solution: Request quota increase or reduce replica count
-
-**KMS Key Access Denied**
-- Error: "Permission denied on KMS key"
-- Solution: Grant cloudkms.cryptoKeyEncrypterDecrypter role to Vertex AI service account
-
-**Vector Search Build Failed**
-- Error: "Index build failed"
-- Solution: Check GCS bucket permissions and embedding format
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 

@@ -14,9 +14,6 @@ author: Jeremy Longshore <jeremy@intentsolutions.io>
 
 # Vercel Common Errors
 
-## Overview
-Quick reference for the top 10 most common Vercel errors and their solutions.
-
 ## Prerequisites
 - Vercel SDK installed
 - API credentials configured
@@ -40,70 +37,13 @@ Follow the solution steps for your specific error.
 
 ## Error Handling
 
-### Build Failed
-**Error Message:**
-```
-Command 'npm run build' exited with 1
-```
-
-**Cause:** Build script failed due to errors in code or dependencies
-
-**Solution:**
-```bash
-Check build logs in Vercel dashboard. Run 'npm run build' locally to reproduce.
-```
-
----
-
-### Function Timeout
-**Error Message:**
-```
-FUNCTION_INVOCATION_TIMEOUT
-```
-
-**Cause:** Serverless function exceeded execution time limit
-
-**Solution:**
-Optimize function code, use Edge Runtime, or upgrade plan for longer timeouts.
-
----
-
-### Domain Verification Failed
-**Error Message:**
-```
-Domain verification failed
-```
-
-**Cause:** DNS records not configured correctly
-
-**Solution:**
-```typescript
-Add required CNAME or A records. Wait for DNS propagation (up to 48h).
-```
+See `{baseDir}/references/errors.md` for comprehensive error handling.
 
 ## Examples
 
-### Quick Diagnostic Commands
-```bash
-# Check Vercel status
-curl -s https://www.vercel-status.com
-
-# Verify API connectivity
-curl -I https://api.vercel.com
-
-# Check local configuration
-env | grep VERCEL
-```
-
-### Escalation Path
-1. Collect evidence with `vercel-debug-bundle`
-2. Check Vercel status page
-3. Contact support with request ID
+See `{baseDir}/references/examples.md` for detailed examples.
 
 ## Resources
 - [Vercel Status Page](https://www.vercel-status.com)
 - [Vercel Support](https://vercel.com/docs/support)
 - [Vercel Error Codes](https://vercel.com/docs/errors)
-
-## Next Steps
-For comprehensive debugging, see `vercel-debug-bundle`.
