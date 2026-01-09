@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.9.0] - 2026-01-08
+
+### Added
+- 10 new SaaS vendor skill packs (Batch 3): Apollo, Deepgram, Juicebox, Customer.io, LangChain, Lindy, Granola, Gamma, Clerk, Linear
+- 240 new skills across Batch 3 vendors (24 skills per pack)
+- npm packages for all 30 SaaS packs with download tracking
+- Learn pages for all Batch 3 vendors on claudecodeplugins.io
+
+### Changed
+- Updated marketplace.extended.json with 10 new pack entries
+- Updated vendor-packs.json with Batch 3 vendor metadata
+- Updated TRACKER.csv with Batch 3 completion status
+
+### Infrastructure
+- All 30 SaaS packs now published to npm (@intentsolutionsio/{vendor}-pack)
+- Consistent naming across marketplace and npm registries
+- Website deployed with 642 pages including all vendor learn pages
+
+### Metrics
+- Total SaaS skill packs: 30 (720 skills)
+- Batch 3 packs: 10 (240 skills)
+- npm packages published: 30
+- Files changed: 305
+- Lines added: +72,405
+
+## [4.8.0] - 2026-01-06
+
+### Added
+- Marketplace redirects for deleted learning pages
+- 14 new vendor skill packs with website pages
+
+### Changed
+- Updated learn hub with all vendor icons
+- Synced marketplace catalogs
+
 ## [4.7.0] - 2026-01-06
 
 ### Added
